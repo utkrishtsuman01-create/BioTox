@@ -131,7 +131,9 @@ def tox21_predict(request: Tox21Request):
     except Exception as exc:
         # Avoid returning file paths, serialized data, or internal exception details.
         raise HTTPException(status_code=500, detail="Model inference failed. Check server logs.") from exc
-\n\n@app.get("/")
+
+
+@app.get("/")
 def root():
     return {
         "service": "BioTox API",
