@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Literal
+from pathlib import Path\nfrom typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,7 +47,90 @@ class ScreeningRequest(BaseModel):
         return value
 
 
-@app.get("/")
+
+
+TOX21_ENDPOINTS = {
+    "NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase", "NR-ER",
+    "NR-ER-LBD", "NR-PPAR-gamma", "SR-ARE", "SR-ATAD5",
+    "SR-HSE", "SR-MMP", "SR-p53",
+}
+MODEL_DIR = Path(os.getenv("BIOTOX_MODEL_DIR", str(Path(__file__).parent / "models")))
+
+
+class Tox21Request(BaseModel):
+    smiles: str = Field(min_length=1, max_length=2000)
+    endpoint: str
+
+    @field_validator("smiles")
+    @classmethod
+    def validate_smiles_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("SMILES cannot be empty.")
+        return value
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        if value not in TOX21_ENDPOINTS:
+            raise ValueError("Unknown Tox21 assay endpoint.")
+        return value
+
+
+@app.post("/api/v1/tox21/predict")
+def tox21_predict(request: Tox21Request):
+    """Predict a specific Tox21 assay only when its locally trained artifact exists."""
+    safe_name = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in request.endpoint)
+    artifact = MODEL_DIR / f"{safe_name}.joblib"
+    if not artifact.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "ENDPOINT_MODEL_NOT_TRAINED",
+                "message": (
+                    f"No trained artifact exists for {request.endpoint}. Run "
+                    "backend/train_tox21.py and review evaluation_report.json first."
+                ),
+            },
+        )
+    try:
+        from rdkit import Chem, DataStructs
+        from rdkit.Chem import AllChem
+        import joblib
+        import numpy as np
+
+        molecule = Chem.MolFromSmiles(request.smiles)
+        if molecule is None:
+            raise HTTPException(status_code=422, detail="Invalid SMILES representation.")
+        bundle = joblib.load(artifact)
+        fingerprint = AllChem.GetMorganFingerprintAsBitVect(
+            molecule, int(bundle["radius"]), nBits=int(bundle["n_bits"])
+        )
+        vector = np.zeros((int(bundle["n_bits"]),), dtype=np.float32)
+        DataStructs.ConvertToNumpyArray(fingerprint, vector)
+        probability = float(bundle["model"].predict_proba(vector.reshape(1, -1))[0, 1])
+        return {
+            "compound_input": request.smiles,
+            "endpoint": request.endpoint,
+            "assay_activity_probability": probability,
+            "interpretation": (
+                "Estimated probability of the positive Tox21 assay label, not a universal "
+                "toxicity probability or proof of safety."
+            ),
+            "model_dataset": "Tox21",
+            "evaluation": bundle.get("metrics", {}),
+            "limitations": [
+                "Research baseline trained with a random split; external validation may be absent.",
+                "Assay activity is endpoint-specific and is not a universal toxicity category.",
+                "Do not use this output for exposure, treatment, regulatory, or safety decisions.",
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Avoid returning file paths, serialized data, or internal exception details.
+        raise HTTPException(status_code=500, detail="Model inference failed. Check server logs.") from exc
+\n\n@app.get("/")
 def root():
     return {
         "service": "BioTox API",
