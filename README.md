@@ -26,6 +26,22 @@ python -m http.server 8000
 
 Then visit `http://localhost:8000`.
 
+## Optional Tox21 baseline training pipeline
+
+A reproducible starter pipeline is provided in `backend/train_tox21.py`. It downloads the public Tox21 benchmark, validates SMILES with RDKit, builds Morgan fingerprints, trains one Random Forest per assay endpoint, and writes model artifacts plus an evaluation report. This pipeline is a starting point for a college project, not a scientifically qualified safety model.
+
+Run from the repository root after installing `backend/requirements.txt`:
+
+```bash
+cd backend
+python train_tox21.py
+pytest -q
+```
+
+The Tox21 dataset contains assay-specific labels. The models estimate the probability of a positive assay label; this must not be described as a universal toxicity probability. The included random stratified split is only a baseline and can overestimate generalization because related chemical structures can cross splits. Before scientific use, add scaffold-based and external validation, endpoint-level review, calibration, applicability-domain checks, and documented dataset provenance.
+
+The optional `POST /api/v1/tox21/predict` endpoint only runs when a trained artifact for the requested assay exists. Without one, it returns a clear HTTP 503 response rather than fabricating a prediction. The existing browser-only interface remains explicitly marked as a demo and does not yet call the API.
+
 ## Suggested architecture for real ML predictions
 
 1. **Chemistry parsing:** validate submitted SMILES and normalize molecular structures with RDKit.
