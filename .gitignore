@@ -6,3 +6,4 @@ venv/
 .env.*
 !.env.example
 .DS_Store
+\n# Downloaded benchmark data and locally trained model artifacts\nbackend/data/\nbackend/models/*.joblib\nbackend/models/evaluation_report.json\n
