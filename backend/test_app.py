@@ -33,3 +33,20 @@ def test_unknown_endpoint_is_rejected():
         json={"compound": "caffeine", "input_type": "name", "endpoint": "made_up"},
     )
     assert response.status_code == 422
+
+
+def test_tox21_requires_trained_artifact():
+    response = client.post(
+        "/api/v1/tox21/predict",
+        json={"smiles": "CCO", "endpoint": "NR-AR"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "ENDPOINT_MODEL_NOT_TRAINED"
+
+
+def test_tox21_rejects_unknown_endpoint():
+    response = client.post(
+        "/api/v1/tox21/predict",
+        json={"smiles": "CCO", "endpoint": "universal-toxicity"},
+    )
+    assert response.status_code == 422
